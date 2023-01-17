@@ -439,10 +439,10 @@ int virtio_video_cmd_stream_create(struct virtio_video *vv, uint32_t stream_id,
 	struct virtio_video_stream_create *req_p;
 	struct virtio_video_vbuffer *vbuf;
 	/*
-	 * Use virtio objects by default ; future versions of the virtio-video
-	 * spec will very likely drop this parameter.
+	 * Use guest pages by default as virtio object is not supported yet; future
+	 * versions of the virtio-video spec will very likely drop this parameter.
 	 */
-	int resource_type = VIRTIO_VIDEO_MEM_TYPE_VIRTIO_OBJECT;
+	int resource_type = VIRTIO_VIDEO_MEM_TYPE_GUEST_PAGES;
 
 	req_p = virtio_video_alloc_req(vv, &vbuf, sizeof(*req_p));
 	if (IS_ERR(req_p))
