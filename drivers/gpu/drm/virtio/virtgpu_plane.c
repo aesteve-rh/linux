@@ -328,15 +328,10 @@ static void virtio_gpu_cursor_plane_update(struct drm_plane *plane,
 		output->cursor.hdr.type =
 			cpu_to_le32(VIRTIO_GPU_CMD_UPDATE_CURSOR);
 		output->cursor.resource_id = cpu_to_le32(handle);
-		if (plane->state->fb) {
-			output->cursor.hot_x =
-				cpu_to_le32(plane->state->hotspot_x);
-			output->cursor.hot_y =
-				cpu_to_le32(plane->state->hotspot_y);
-		} else {
-			output->cursor.hot_x = cpu_to_le32(0);
-			output->cursor.hot_y = cpu_to_le32(0);
-		}
+		output->cursor.hot_x =
+			cpu_to_le32(plane->state->hotspot_x);
+		output->cursor.hot_y =
+			cpu_to_le32(plane->state->hotspot_y);
 	} else {
 		DRM_DEBUG("move +%d+%d\n",
 			  plane->state->crtc_x,
