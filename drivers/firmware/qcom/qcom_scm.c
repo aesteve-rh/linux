@@ -65,19 +65,6 @@ struct qcom_scm {
 	unsigned int wq_cnt;
 };
 
-struct qcom_scm_current_perm_info {
-	__le32 vmid;
-	__le32 perm;
-	__le64 ctx;
-	__le32 ctx_size;
-	__le32 unused;
-};
-
-struct qcom_scm_mem_map_info {
-	__le64 mem_addr;
-	__le64 mem_size;
-};
-
 DEFINE_SEMAPHORE(qcom_scm_sem_lock, 1);
 
 /**
@@ -1414,6 +1401,39 @@ int qcom_scm_assign_mem(phys_addr_t mem_addr, size_t mem_sz,
 	return 0;
 }
 EXPORT_SYMBOL_GPL(qcom_scm_assign_mem);
+
+/**
+ * qcom_scm_assign_mem_regions() - Make a secure call to reassign memory
+ *				   ownership of several memory regions
+ * @mem_regions:    A buffer describing the set of memory regions that need to
+ *		    be reassigned
+ * @mem_regions_sz: The size of the buffer describing the set of memory
+ *		    regions that need to be reassigned (in bytes)
+ * @srcvms:         A buffer populated with the vmid(s) for the current set of
+ *		    owners
+ * @src_sz:         The size of the src_vms buffer (in bytes)
+ * @newvms:         A buffer populated with the new owners and corresponding
+ *		    permission flags.
+ * @newvms_sz:      The size of the new_vms buffer (in bytes)
+ *
+ * NOTE: It is up to the caller to ensure that the buffers that will be accessed
+ * by the secure world are cache aligned, and have been flushed prior to
+ * invoking this call.
+ *
+ * Return negative errno on failure, 0 on success.
+ */
+int qcom_scm_assign_mem_regions(struct qcom_scm_mem_map_info *mem_regions,
+				size_t mem_regions_sz, u32 *srcvms,
+				size_t src_sz,
+				struct qcom_scm_current_perm_info *newvms,
+				size_t newvms_sz)
+{
+	return __qcom_scm_assign_mem(__scm ? __scm->dev : NULL,
+				     virt_to_phys(mem_regions), mem_regions_sz,
+				     virt_to_phys(srcvms), src_sz,
+				     virt_to_phys(newvms), newvms_sz);
+}
+EXPORT_SYMBOL_GPL(qcom_scm_assign_mem_regions);
 
 /**
  * qcom_scm_ocmem_lock_available() - is OCMEM lock/unlock interface available
