@@ -78,6 +78,8 @@ struct qcom_scm_mem_map_info {
 	__le64 mem_size;
 };
 
+DEFINE_SEMAPHORE(qcom_scm_sem_lock, 1);
+
 /**
  * struct qcom_scm_qseecom_resp - QSEECOM SCM call response.
  * @result:    Result or status of the SCM call. See &enum qcom_scm_qseecom_result.
@@ -2578,6 +2580,25 @@ bool qcom_scm_is_available(void)
 }
 EXPORT_SYMBOL_GPL(qcom_scm_is_available);
 
+static int qcom_scm_query_call_ctx_cnt(void)
+{
+	struct qcom_scm_desc desc = {
+		.svc = QCOM_SCM_SVC_WAITQ,
+		.cmd = QCOM_SCM_WAITQ_GET_INFO,
+		.owner = ARM_SMCCC_OWNER_SIP,
+	};
+	struct qcom_scm_res res;
+	int ret;
+
+	ret = qcom_scm_call_atomic(__scm->dev, &desc, &res);
+	if (ret) {
+		dev_err(__scm->dev, "Failed to query SCM call context count\n");
+		return 1;
+	}
+
+	return max_t(int, (int)(res.result[0] & GENMASK(7, 0)), 1);
+}
+
 static int qcom_scm_fill_irq_fwspec_params(struct irq_fwspec *fwspec, u32 hwirq)
 {
 	if (hwirq >= GIC_SPI_BASE && hwirq <= GIC_MAX_SPI) {
@@ -2903,6 +2924,7 @@ static int qcom_scm_probe(struct platform_device *pdev)
 	smp_store_release(&__scm, scm);
 
 	__get_convention();
+	sema_init(&qcom_scm_sem_lock, qcom_scm_query_call_ctx_cnt());
 
 	if (qcom_scm_is_pas_available()) {
 		qcom_pas_ops_scm.dev = scm->dev;
