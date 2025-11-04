@@ -628,8 +628,19 @@ static int qcom_snps_hsphy_probe(struct platform_device *pdev)
 	return PTR_ERR_OR_ZERO(phy_provider);
 }
 
+static void qcom_snps_hsphy_remove(struct platform_device *pdev)
+{
+	struct qcom_snps_hsphy *hsphy = platform_get_drvdata(pdev);
+	int ret;
+
+	reset_control_assert(hsphy->phy_reset);
+	clk_bulk_disable_unprepare(hsphy->num_clks, hsphy->clks);
+	regulator_bulk_disable(ARRAY_SIZE(hsphy->vregs), hsphy->vregs);
+}
+
 static struct platform_driver qcom_snps_hsphy_driver = {
 	.probe		= qcom_snps_hsphy_probe,
+	.remove_new	= qcom_snps_hsphy_remove,
 	.driver = {
 		.name	= "qcom-snps-hs-femto-v2-phy",
 		.pm = &qcom_snps_hsphy_pm_ops,
