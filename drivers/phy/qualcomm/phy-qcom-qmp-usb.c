@@ -2300,6 +2300,17 @@ err_node_put:
 	return ret;
 }
 
+static void qmp_usb_remove(struct platform_device *pdev)
+{
+	struct qmp_usb *qmp = platform_get_drvdata(pdev);
+	const struct qmp_phy_cfg *cfg = qmp->cfg;
+
+	clk_disable_unprepare(qmp->pipe_clk);
+	reset_control_bulk_assert(qmp->num_resets, qmp->resets);
+	clk_bulk_disable_unprepare(qmp->num_clks, qmp->clks);
+	regulator_bulk_disable(cfg->num_vregs, qmp->vregs);
+}
+
 static const struct of_device_id qmp_usb_of_match_table[] = {
 	{
 		.compatible = "qcom,ipq5424-qmp-usb3-phy",
@@ -2362,6 +2373,7 @@ MODULE_DEVICE_TABLE(of, qmp_usb_of_match_table);
 
 static struct platform_driver qmp_usb_driver = {
 	.probe		= qmp_usb_probe,
+	.remove_new	= qmp_usb_remove,
 	.driver = {
 		.name	= "qcom-qmp-usb-phy",
 		.pm	= &qmp_usb_pm_ops,
