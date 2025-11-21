@@ -12,6 +12,7 @@
 #include <linux/of.h>
 #include <linux/phy/phy.h>
 #include <linux/platform_device.h>
+#include <linux/pm_domain.h>
 #include <linux/regmap.h>
 #include <linux/regulator/consumer.h>
 #include <linux/reset.h>
@@ -95,6 +96,7 @@ struct override_param_map {
 	u8 table_size;
 	u8 reg_offset;
 	u8 param_mask;
+	bool fw_managed;
 };
 
 struct phy_override_seq {
@@ -121,6 +123,7 @@ struct phy_override_seq {
  * @phy_initialized: if PHY has been initialized correctly
  * @mode: contains the current mode the PHY is in
  * @update_seq_cfg: tuning parameters for phy init
+ * @pd_list: list of power domains associated with the device
  */
 struct qcom_snps_hsphy {
 	struct device *dev;
@@ -136,7 +139,60 @@ struct qcom_snps_hsphy {
 	bool phy_initialized;
 	enum phy_mode mode;
 	struct phy_override_seq update_seq_cfg[NUM_HSPHY_TUNING_PARAMS];
+
+	struct dev_pm_domain_list *pd_list;
 };
+
+static void qcom_snps_domain_detach(struct qcom_snps_hsphy *hsphy)
+{
+	dev_pm_domain_detach_list(hsphy->pd_list);
+}
+
+static int qcom_snps_domain_attach(struct qcom_snps_hsphy *hsphy)
+{
+	struct dev_pm_domain_attach_data pd_data = {
+		.pd_flags       = PD_FLAG_NO_DEV_LINK,
+		.pd_names       = (const char*[]) { "usb_transfer", "usb_core" },
+		.num_pd_names   = 2,
+	};
+	struct device *dev = hsphy->dev;
+	int ret = 0;
+
+	ret = dev_pm_domain_attach_list(dev, &pd_data, &hsphy->pd_list);
+	if (ret < 0) {
+		dev_err(dev, "domain attach failed %d)\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+/* d3_to_d0 transition by turning on all the suppliers */
+static int qcom_snps_d3_to_d0(struct qcom_snps_hsphy *hsphy)
+{
+       int ret = 0;
+
+       if (!hsphy->pd_list)
+               return 0;
+
+       ret = pm_runtime_resume_and_get(hsphy->pd_list->pd_devs[0]);
+       if (ret)
+               return ret;
+
+       ret = pm_runtime_resume_and_get(hsphy->pd_list->pd_devs[1]);
+
+       return ret;
+}
+
+/* d0_to_d3 transition by turning off all the suppliers */
+static void qcom_snps_d0_to_d3(struct qcom_snps_hsphy *hsphy)
+{
+       if (!hsphy->pd_list)
+               return;
+
+       pm_runtime_put_sync(hsphy->pd_list->pd_devs[0]);
+       pm_runtime_put_sync(hsphy->pd_list->pd_devs[1]);
+}
 
 static int qcom_snps_hsphy_clk_init(struct qcom_snps_hsphy *hsphy)
 {
@@ -316,27 +372,34 @@ static const struct override_param ls_fs_output_impedance_sc7280[] = {
 	{ 1310, 0 },
 };
 
+static const struct override_param_map sa8255p_snps_hs_phy = {
+	.fw_managed = true,
+};
+
 static const struct override_param_map sc7280_snps_7nm_phy[] = {
 	{
 		"qcom,hs-disconnect-bp",
 		hs_disconnect_sc7280,
 		ARRAY_SIZE(hs_disconnect_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X0,
-		HS_DISCONNECT_MASK
+		HS_DISCONNECT_MASK,
+		0
 	},
 	{
 		"qcom,squelch-detector-bp",
 		squelch_det_threshold_sc7280,
 		ARRAY_SIZE(squelch_det_threshold_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X0,
-		SQUELCH_DETECTOR_MASK
+		SQUELCH_DETECTOR_MASK,
+		0
 	},
 	{
 		"qcom,hs-amplitude-bp",
 		hs_amplitude_sc7280,
 		ARRAY_SIZE(hs_amplitude_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X1,
-		HS_AMPLITUDE_MASK
+		HS_AMPLITUDE_MASK,
+		0
 	},
 	{
 		"qcom,pre-emphasis-duration-bp",
@@ -344,6 +407,7 @@ static const struct override_param_map sc7280_snps_7nm_phy[] = {
 		ARRAY_SIZE(preemphasis_duration_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X1,
 		PREEMPHASIS_DURATION_MASK,
+		0
 	},
 	{
 		"qcom,pre-emphasis-amplitude-bp",
@@ -351,20 +415,23 @@ static const struct override_param_map sc7280_snps_7nm_phy[] = {
 		ARRAY_SIZE(preemphasis_amplitude_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X1,
 		PREEMPHASIS_AMPLITUDE_MASK,
+		0
 	},
 	{
 		"qcom,hs-rise-fall-time-bp",
 		hs_rise_fall_time_sc7280,
 		ARRAY_SIZE(hs_rise_fall_time_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X2,
-		HS_RISE_FALL_MASK
+		HS_RISE_FALL_MASK,
+		0
 	},
 	{
 		"qcom,hs-crossover-voltage-microvolt",
 		hs_crossover_voltage_sc7280,
 		ARRAY_SIZE(hs_crossover_voltage_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X2,
-		HS_CROSSOVER_VOLTAGE_MASK
+		HS_CROSSOVER_VOLTAGE_MASK,
+		0
 	},
 	{
 		"qcom,hs-output-impedance-micro-ohms",
@@ -372,6 +439,7 @@ static const struct override_param_map sc7280_snps_7nm_phy[] = {
 		ARRAY_SIZE(hs_output_impedance_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X2,
 		HS_OUTPUT_IMPEDANCE_MASK,
+		0
 	},
 	{
 		"qcom,ls-fs-output-impedance-bp",
@@ -379,6 +447,7 @@ static const struct override_param_map sc7280_snps_7nm_phy[] = {
 		ARRAY_SIZE(ls_fs_output_impedance_sc7280),
 		USB2_PHY_USB_PHY_HS_PHY_OVERRIDE_X3,
 		LS_FS_OUTPUT_IMPEDANCE_MASK,
+		0
 	},
 	{},
 };
@@ -389,6 +458,12 @@ static int qcom_snps_hsphy_init(struct phy *phy)
 	int ret, i;
 
 	dev_vdbg(&phy->dev, "%s(): Initializing SNPS HS phy\n", __func__);
+
+	ret = qcom_snps_d3_to_d0(hsphy);
+	if (ret < 0) {
+		dev_err(hsphy->dev, "Failed to transition to d0 state\n");
+		return ret;
+	}
 
 	ret = regulator_bulk_enable(ARRAY_SIZE(hsphy->vregs), hsphy->vregs);
 	if (ret)
@@ -480,6 +555,8 @@ static int qcom_snps_hsphy_exit(struct phy *phy)
 {
 	struct qcom_snps_hsphy *hsphy = phy_get_drvdata(phy);
 
+	qcom_snps_d0_to_d3(hsphy);
+
 	reset_control_assert(hsphy->phy_reset);
 	clk_bulk_disable_unprepare(hsphy->num_clks, hsphy->clks);
 	regulator_bulk_disable(ARRAY_SIZE(hsphy->vregs), hsphy->vregs);
@@ -496,6 +573,11 @@ static const struct phy_ops qcom_snps_hsphy_gen_ops = {
 };
 
 static const struct of_device_id qcom_snps_hsphy_of_match_table[] = {
+	{
+		.compatible	= "qcom,sa8255p-usb-hs-phy",
+		.data		= &sa8255p_snps_hs_phy,
+
+	},
 	{ .compatible	= "qcom,sm8150-usb-hs-phy", },
 	{ .compatible	= "qcom,usb-snps-hs-5nm-phy", },
 	{
@@ -565,6 +647,7 @@ static int qcom_snps_hsphy_probe(struct platform_device *pdev)
 {
 	struct device *dev = &pdev->dev;
 	struct qcom_snps_hsphy *hsphy;
+	const struct override_param_map *priv_data;
 	struct phy_provider *phy_provider;
 	struct phy *generic_phy;
 	int ret, i;
@@ -580,14 +663,25 @@ static int qcom_snps_hsphy_probe(struct platform_device *pdev)
 	if (IS_ERR(hsphy->base))
 		return PTR_ERR(hsphy->base);
 
-	ret = qcom_snps_hsphy_clk_init(hsphy);
-	if (ret)
-		return dev_err_probe(dev, ret, "failed to initialize clocks\n");
+	priv_data = of_device_get_match_data(dev);
 
-	hsphy->phy_reset = devm_reset_control_get_exclusive(&pdev->dev, NULL);
-	if (IS_ERR(hsphy->phy_reset)) {
-		dev_err(dev, "failed to get phy core reset\n");
-		return PTR_ERR(hsphy->phy_reset);
+	if (priv_data && priv_data->fw_managed) {
+		ret = qcom_snps_domain_attach(hsphy);
+		if (ret) {
+			dev_err(dev, "Failed to attach domains. Bail out\n");
+			return ret;
+		}
+	} else {
+
+		ret = qcom_snps_hsphy_clk_init(hsphy);
+		if (ret)
+			return dev_err_probe(dev, ret, "failed to initialize clocks\n");
+
+		hsphy->phy_reset = devm_reset_control_get_exclusive(&pdev->dev, NULL);
+		if (IS_ERR(hsphy->phy_reset)) {
+			dev_err(dev, "failed to get phy core reset\n");
+			return PTR_ERR(hsphy->phy_reset);
+		}
 	}
 
 	num = ARRAY_SIZE(hsphy->vregs);
@@ -628,8 +722,21 @@ static int qcom_snps_hsphy_probe(struct platform_device *pdev)
 	return PTR_ERR_OR_ZERO(phy_provider);
 }
 
+static void qcom_snps_hsphy_remove(struct platform_device *pdev)
+{
+	struct qcom_snps_hsphy *hsphy = platform_get_drvdata(pdev);
+
+	qcom_snps_d0_to_d3(hsphy);
+	qcom_snps_domain_detach(hsphy);
+
+	reset_control_assert(hsphy->phy_reset);
+	clk_bulk_disable_unprepare(hsphy->num_clks, hsphy->clks);
+	regulator_bulk_disable(ARRAY_SIZE(hsphy->vregs), hsphy->vregs);
+}
+
 static struct platform_driver qcom_snps_hsphy_driver = {
 	.probe		= qcom_snps_hsphy_probe,
+	.remove_new	= qcom_snps_hsphy_remove,
 	.driver = {
 		.name	= "qcom-snps-hs-femto-v2-phy",
 		.pm = &qcom_snps_hsphy_pm_ops,
