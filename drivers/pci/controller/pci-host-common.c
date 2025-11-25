@@ -52,15 +52,11 @@ static struct pci_config_window *gen_pci_init(struct device *dev,
 }
 
 int pci_host_common_init(struct platform_device *pdev,
+			 struct pci_host_bridge *bridge,
 			 const struct pci_ecam_ops *ops)
 {
 	struct device *dev = &pdev->dev;
-	struct pci_host_bridge *bridge;
 	struct pci_config_window *cfg;
-
-	bridge = devm_pci_alloc_host_bridge(dev, 0);
-	if (!bridge)
-		return -ENOMEM;
 
 	of_pci_check_probe_only();
 
@@ -84,12 +80,17 @@ EXPORT_SYMBOL_GPL(pci_host_common_init);
 int pci_host_common_probe(struct platform_device *pdev)
 {
 	const struct pci_ecam_ops *ops;
+	struct pci_host_bridge *bridge;
 
 	ops = of_device_get_match_data(&pdev->dev);
 	if (!ops)
 		return -ENODEV;
 
-	return pci_host_common_init(pdev, ops);
+	bridge = devm_pci_alloc_host_bridge(&pdev->dev, 0);
+	if (!bridge)
+		return -ENOMEM;
+
+	return pci_host_common_init(pdev, bridge, ops);
 }
 EXPORT_SYMBOL_GPL(pci_host_common_probe);
 
