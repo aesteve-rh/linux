@@ -312,8 +312,8 @@ extern void cifs_close_deferred_file(struct cifsInodeInfo *cifs_inode);
 
 extern void cifs_close_all_deferred_files(struct cifs_tcon *cifs_tcon);
 
-extern void cifs_close_deferred_file_under_dentry(struct cifs_tcon *cifs_tcon,
-				const char *path);
+void cifs_close_deferred_file_under_dentry(struct cifs_tcon *cifs_tcon,
+					   struct dentry *dentry);
 
 extern void cifs_mark_open_handles_for_deleted_file(struct inode *inode,
 				const char *path);
@@ -614,6 +614,8 @@ extern int E_md4hash(const unsigned char *passwd, unsigned char *p16,
 
 extern struct TCP_Server_Info *
 cifs_find_tcp_session(struct smb3_fs_context *ctx);
+
+struct cifs_tcon *cifs_setup_ipc(struct cifs_ses *ses, bool seal);
 
 void __cifs_put_smb_ses(struct cifs_ses *ses);
 
