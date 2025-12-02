@@ -978,6 +978,10 @@ Source34: def_variants.yaml.rhel
 Source41: x509.genkey.centos
 %endif
 
+%if %{include_automotive}
+Source35: private_headers.automotive
+%endif
+
 %if 0%{?include_fedora}
 Source50: x509.genkey.fedora
 
@@ -1476,6 +1480,38 @@ against the %{?2:%{2} }kernel package.\
 %{nil}
 
 #
+# This macro creates a kernel-<subpackage>-devel-priv package.
+#	%%kernel_devel_priv_package [-m] <subpackage> <pretty-name>
+#
+%define kernel_devel_priv_package(m) \
+%package %{?1:%{1}-}devel-priv\
+Summary: Development package for building kernel modules requiring private headers to match the %{?2:%{2} }kernel\
+Provides: %{name}%{?1:-%{1}}-devel-priv-%{_target_cpu} = %{specrpmversion}-%{release}\
+Provides: %{name}-devel-priv-%{_target_cpu} = %{specrpmversion}-%{release}%{uname_suffix %{?1}}\
+Provides: kernel-devel-priv-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Provides: %{name}-devel-priv-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+Provides: installonlypkg(kernel)\
+AutoReqProv: no\
+Requires(pre): findutils\
+Requires: findutils\
+Requires: perl-interpreter\
+Requires: openssl-devel\
+Requires: elfutils-libelf-devel\
+Requires: bison\
+Requires: flex\
+Requires: make\
+Requires: gcc\
+Requires: %{name}-devel-uname-r = %{KVERREL}%{uname_suffix %{?1}}\
+%if %{-m:1}%{!-m:0}\
+Requires: %{name}-devel-priv-uname-r = %{KVERREL}%{uname_variant %{?1}}\
+%endif\
+%description %{?1:%{1}-}devel-priv\
+This package provides selected kernel private headers to build certain modules\
+against the %{?2:%{2} }kernel package.\
+%{nil}
+
+
+#
 # This macro creates an empty kernel-<subpackage>-devel-matched package that
 # requires both the core and devel packages locked on the same version.
 #	%%kernel_devel_matched_package [-m] <subpackage> <pretty-name>
@@ -1630,6 +1666,9 @@ Requires: %{name}-%{?1:%{1}-}-modules-core-uname-r = %{KVERREL}%{uname_variant %
 %endif\
 %{expand:%%kernel_devel_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
 %{expand:%%kernel_devel_matched_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
+%if %{with_automotive}\
+%{expand:%%kernel_devel_priv_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
+%endif\
 %{expand:%%kernel_modules_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
 %{expand:%%kernel_modules_core_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
 %{expand:%%kernel_modules_extra_package %{?1:%{1}} %{!?{-n}:%{1}}%{?{-n}:%{-n*}} %{-m:%{-m}}}\
@@ -2981,6 +3020,21 @@ BuildKernel() {
     find $RPM_BUILD_ROOT/usr/src/kernels -name ".*.cmd" -delete
     # prune junk from kernel-debuginfo
     find $RPM_BUILD_ROOT/usr/src/kernels -name "*.mod.c" -delete
+
+    # Automotive vendor kernels have an additional package to expose some private headers.
+    if [[ ( "%{with_automotive_build}" -eq 1 && "${Variant%%debug}" = "" ) || \
+          ( "%{with_automotive}" -eq 1 && "${Variant%%-debug}" = "automotive" ) ]]; then
+        # Add a nop defattr to keep packaging happy.
+        echo '%%defattr(-,-,-)' > ../kernel${Variant:+-${Variant}}-devel-priv.list
+        if [[ -f "redhat/rhel_files/private_headers.automotive" ]]; then
+            %{log_msg "Expose private headers"}
+            # Copy the headers out of the root file system ($DevelDir already
+            # exists from -devel handling)
+            xargs -I {} cp --parents {} $RPM_BUILD_ROOT$DevelDir < redhat/rhel_files/private_headers.automotive
+            sed -e 's|^|'$DevelDir'/|' redhat/rhel_files/private_headers.automotive > \
+                ../kernel${Variant:+-${Variant}}-devel-priv.list
+        fi
+    fi
 
     # Red Hat UEFI Secure Boot CA cert, which can be used to authenticate the kernel
     %{log_msg "Install certs"}
@@ -4366,6 +4420,9 @@ fi\
 %ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.symbols.bin\
 %ghost %attr(0644, root, root) /lib/modules/%{KVERREL}%{?3:+%{3}}/modules.weakdep\
 %{expand:%%files -f kernel-%{?3:%{3}-}modules.list %{?3:%{3}-}modules}\
+%if %{with_automotive}\
+%{expand:%%files -f kernel-%{?3:%{3}-}devel-priv.list %{?3:%{3}-}devel-priv}\
+%endif\
 %{expand:%%files %{?3:%{3}-}devel}\
 %defverify(not mtime)\
 /usr/src/kernels/%{KVERREL}%{?3:+%{3}}\
