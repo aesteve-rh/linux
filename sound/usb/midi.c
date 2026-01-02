@@ -2089,7 +2089,7 @@ static int roland_load_get(struct snd_kcontrol *kcontrol,
 static int roland_load_put(struct snd_kcontrol *kcontrol,
 			   struct snd_ctl_elem_value *value)
 {
-	struct snd_usb_midi *umidi = kcontrol->private_data;
+	struct snd_usb_midi *umidi = snd_kcontrol_chip(kcontrol);
 	int changed;
 
 	if (value->value.enumerated.item[0] > 1)
@@ -2407,7 +2407,7 @@ static int snd_usbmidi_create_rawmidi(struct snd_usb_midi *umidi,
 			      out_ports, in_ports, &rmidi);
 	if (err < 0)
 		return err;
-	strcpy(rmidi->name, umidi->card->shortname);
+	strscpy(rmidi->name, umidi->card->shortname);
 	rmidi->info_flags = SNDRV_RAWMIDI_INFO_OUTPUT |
 			    SNDRV_RAWMIDI_INFO_INPUT |
 			    SNDRV_RAWMIDI_INFO_DUPLEX;

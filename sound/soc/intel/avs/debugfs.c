@@ -144,7 +144,7 @@ static ssize_t probe_points_write(struct file *file, const char __user *from, si
 	int ret;
 
 	ret = parse_int_array_user(from, count, (int **)&array);
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	num_elems = *array;
@@ -181,7 +181,7 @@ static ssize_t probe_points_disconnect_write(struct file *file, const char __use
 	int ret;
 
 	ret = parse_int_array_user(from, count, (int **)&array);
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	num_elems = *array;
@@ -315,7 +315,6 @@ err_ipc:
 	if (!adev->logged_resources) {
 		avs_dsp_enable_d0ix(adev);
 err_d0ix:
-		pm_runtime_mark_last_busy(adev->dev);
 		pm_runtime_put_autosuspend(adev->dev);
 	}
 
@@ -342,7 +341,6 @@ static int disable_logs(struct avs_dev *adev, u32 resource_mask)
 	/* If that's the last resource, allow for D3. */
 	if (!adev->logged_resources) {
 		avs_dsp_enable_d0ix(adev);
-		pm_runtime_mark_last_busy(adev->dev);
 		pm_runtime_put_autosuspend(adev->dev);
 	}
 
@@ -369,7 +367,7 @@ static ssize_t trace_control_write(struct file *file, const char __user *from, s
 	int ret;
 
 	ret = parse_int_array_user(from, count, (int **)&array);
-	if (ret < 0)
+	if (ret)
 		return ret;
 
 	num_elems = *array;

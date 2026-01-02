@@ -57,10 +57,10 @@ ifneq ($(SPECGEMINI),0)
   SPECKEXTRAVERSION:=
 endif
 
-# When building kernel-automotive, set AUTOMOTIVE_BUILD=1.
+# When building the automotive kernel package, set AUTOMOTIVE_BUILD=1.
 ifeq ($(AUTOMOTIVE_BUILD), 1)
-  SPECPACKAGE_NAME:=kernel-automotive
-  DIST:=.el$(RHEL_MAJOR)iv
+  SPECPACKAGE_NAME:=$(AUTOMOTIVE_PKG_NAME)
+  DIST:=$(AUTOMOTIVE_PKG_DIST)
 endif
 
 GITID:= $(shell $(GIT) log --max-count=1 --pretty=format:%H $(HEAD))
@@ -115,21 +115,29 @@ ifndef RHJOBS
 	  fi)
 endif
 
-LOCVERFILE:=../localversion
-# create an empty localversion file if you don't want a local buildid
-ifneq ($(wildcard $(LOCVERFILE)),)
-  DISTLOCALVERSION:=$(shell cat $(LOCVERFILE))
-  ifeq (,$(findstring s,$(firstword -$(MAKEFLAGS))))
-    $(info DISTLOCALVERSION is "$(DISTLOCALVERSION)". Update '$(shell dirname $(REDHAT))/localversion' to change.)
-  endif
-else
-  ifeq ($(DISTLOCALVERSION),)
-    DISTLOCALVERSION:=.test
-  endif
+# for official builds use RELEASE_LOCALVERSION persisted in Makefile.variables
+ifneq ($(filter $(MAKECMDGOALS),dist-release dist-release-tag dist-release-git dist-rtg dist-get-tag),)
+  DISTLOCALVERSION:=$(RELEASE_LOCALVERSION)
   ifeq (,$(findstring s,$(firstword -$(MAKEFLAGS))))
     $(info DISTLOCALVERSION is "$(DISTLOCALVERSION)".)
   endif
-endif
+else
+  LOCVERFILE:=../localversion
+  # create an empty localversion file if you don't want a local buildid
+  ifneq ($(wildcard $(LOCVERFILE)),)
+    DISTLOCALVERSION:=$(shell cat $(LOCVERFILE))
+    ifeq (,$(findstring s,$(firstword -$(MAKEFLAGS))))
+      $(info DISTLOCALVERSION is "$(DISTLOCALVERSION)". Update '$(shell dirname $(REDHAT))/localversion' to change.)
+    endif
+  else
+    ifeq ($(DISTLOCALVERSION),)
+      DISTLOCALVERSION:=.test
+    endif
+    ifeq (,$(findstring s,$(firstword -$(MAKEFLAGS))))
+      $(info DISTLOCALVERSION is "$(DISTLOCALVERSION)".)
+    endif
+  endif
+endif # MAKECMDGOALS
 
 # options for process_configs.sh script
 ifdef NO_CONFIGCHECKS
@@ -341,7 +349,7 @@ else
   RHPKG_BIN:=rhpkg
 endif
 
-# When building kernel-automotive, set AUTOMOTIVE_BUILD=1.
+# When building the automotive kernel package, set AUTOMOTIVE_BUILD=1.
 ifeq ($(AUTOMOTIVE_BUILD), 1)
   ifeq ("$(DISTRO)", "rhel")
     RHDISTGIT_BRANCH:=rhivos-$(AUTOMOTIVE_MAJOR).$(AUTOMOTIVE_MINOR).0
