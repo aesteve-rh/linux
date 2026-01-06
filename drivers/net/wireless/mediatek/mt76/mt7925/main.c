@@ -757,7 +757,7 @@ void mt7925_set_runtime_pm(struct mt792x_dev *dev)
 	mt7925_mcu_set_deep_sleep(dev, pm->ds_enable);
 }
 
-static int mt7925_config(struct ieee80211_hw *hw, u32 changed)
+static int mt7925_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 {
 	struct mt792x_dev *dev = mt792x_hw_dev(hw);
 	int ret = 0;
@@ -1191,6 +1191,9 @@ mt7925_mac_sta_remove_links(struct mt792x_dev *dev, struct ieee80211_vif *vif,
 		struct mt792x_bss_conf *mconf;
 		struct mt792x_link_sta *mlink;
 
+		if (vif->type == NL80211_IFTYPE_AP)
+			break;
+
 		link_sta = mt792x_sta_to_link_sta(vif, sta, link_id);
 		if (!link_sta)
 			continue;
@@ -1265,7 +1268,8 @@ void mt7925_mac_sta_remove(struct mt76_dev *mdev, struct ieee80211_vif *vif,
 }
 EXPORT_SYMBOL_GPL(mt7925_mac_sta_remove);
 
-static int mt7925_set_rts_threshold(struct ieee80211_hw *hw, u32 val)
+static int mt7925_set_rts_threshold(struct ieee80211_hw *hw, int radio_idx,
+				    u32 val)
 {
 	struct mt792x_dev *dev = mt792x_hw_dev(hw);
 
@@ -1481,7 +1485,7 @@ mt7925_start_sched_scan(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 
 	mt792x_mutex_acquire(dev);
 
-	err = mt7925_mcu_sched_scan_req(mphy, vif, req);
+	err = mt7925_mcu_sched_scan_req(mphy, vif, req, ies);
 	if (err < 0)
 		goto out;
 
@@ -1507,7 +1511,8 @@ mt7925_stop_sched_scan(struct ieee80211_hw *hw, struct ieee80211_vif *vif)
 }
 
 static int
-mt7925_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
+mt7925_set_antenna(struct ieee80211_hw *hw, int radio_idx,
+		   u32 tx_ant, u32 rx_ant)
 {
 	struct mt792x_dev *dev = mt792x_hw_dev(hw);
 	struct mt792x_phy *phy = mt792x_hw_phy(hw);
@@ -1603,6 +1608,9 @@ static void mt7925_sta_set_decap_offload(struct ieee80211_hw *hw,
 	unsigned long valid = mvif->valid_links;
 	u8 i;
 
+	if (!msta->vif)
+		return;
+
 	mt792x_mutex_acquire(dev);
 
 	valid = ieee80211_vif_is_mld(vif) ? mvif->valid_links : BIT(0);
@@ -1616,6 +1624,9 @@ static void mt7925_sta_set_decap_offload(struct ieee80211_hw *hw,
 			set_bit(MT_WCID_FLAG_HDR_TRANS, &mlink->wcid.flags);
 		else
 			clear_bit(MT_WCID_FLAG_HDR_TRANS, &mlink->wcid.flags);
+
+		if (!mlink->wcid.sta)
+			continue;
 
 		mt7925_mcu_wtbl_update_hdr_trans(dev, vif, sta, i);
 	}
@@ -1868,6 +1879,10 @@ mt7925_change_chanctx(struct ieee80211_hw *hw,
 			link_conf = mt792x_vif_to_bss_conf(vif, mconf->link_id);
 			mt7925_mcu_set_chctx(mvif->phy->mt76, &mconf->mt76,
 					     link_conf, ctx);
+
+			if (changed & IEEE80211_CHANCTX_CHANGE_PUNCTURING)
+				mt7925_mcu_set_eht_pp(mvif->phy->mt76, &mconf->mt76,
+						      link_conf, ctx);
 		}
 	}
 
@@ -1957,8 +1972,10 @@ static void mt7925_link_info_changed(struct ieee80211_hw *hw,
 	struct mt792x_phy *phy = mt792x_hw_phy(hw);
 	struct mt792x_dev *dev = mt792x_hw_dev(hw);
 	struct mt792x_bss_conf *mconf;
+	struct ieee80211_bss_conf *link_conf;
 
 	mconf = mt792x_vif_to_link(mvif, info->link_id);
+	link_conf = mt792x_vif_to_bss_conf(vif, mconf->link_id);
 
 	mt792x_mutex_acquire(dev);
 
@@ -1999,6 +2016,10 @@ static void mt7925_link_info_changed(struct ieee80211_hw *hw,
 		ieee80211_queue_delayed_work(hw, &dev->mlo_pm_work, 5 * HZ);
 		mvif->mlo_pm_state = MT792x_MLO_CHANGED_PS;
 	}
+
+	if (changed & IEEE80211_CHANCTX_CHANGE_PUNCTURING)
+		mt7925_mcu_set_eht_pp(mvif->phy->mt76, &mconf->mt76,
+				      link_conf, NULL);
 
 	mt792x_mutex_release(dev);
 }
@@ -2051,8 +2072,10 @@ mt7925_change_vif_links(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 					     GFP_KERNEL);
 			mlink = devm_kzalloc(dev->mt76.dev, sizeof(*mlink),
 					     GFP_KERNEL);
-			if (!mconf || !mlink)
+			if (!mconf || !mlink) {
+				mt792x_mutex_release(dev);
 				return -ENOMEM;
+			}
 		}
 
 		mconfs[link_id] = mconf;
@@ -2249,6 +2272,8 @@ const struct ieee80211_ops mt7925_ops = {
 	.sta_statistics = mt792x_sta_statistics,
 	.sched_scan_start = mt7925_start_sched_scan,
 	.sched_scan_stop = mt7925_stop_sched_scan,
+	CFG80211_TESTMODE_CMD(mt7925_testmode_cmd)
+	CFG80211_TESTMODE_DUMP(mt7925_testmode_dump)
 #ifdef CONFIG_PM
 	.suspend = mt7925_suspend,
 	.resume = mt7925_resume,

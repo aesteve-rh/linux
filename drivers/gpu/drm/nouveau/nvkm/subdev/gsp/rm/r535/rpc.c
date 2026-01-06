@@ -21,8 +21,7 @@
  */
 #include <rm/rpc.h>
 
-#include <nvrm/nvtypes.h>
-#include <nvrm/535.113.01/nvidia/kernel/inc/vgpu/rpc_global_enums.h>
+#include "nvrm/rpcfn.h"
 
 #define GSP_MSG_MIN_SIZE GSP_PAGE_SIZE
 #define GSP_MSG_MAX_SIZE (GSP_MSG_MIN_SIZE * 16)
@@ -326,7 +325,7 @@ r535_gsp_msgq_recv(struct nvkm_gsp *gsp, u32 gsp_rpc_len, int *retries)
 
 		rpc = r535_gsp_msgq_peek(gsp, sizeof(*rpc), info.retries);
 		if (IS_ERR_OR_NULL(rpc)) {
-			kfree(buf);
+			kvfree(buf);
 			return rpc;
 		}
 
@@ -335,7 +334,7 @@ r535_gsp_msgq_recv(struct nvkm_gsp *gsp, u32 gsp_rpc_len, int *retries)
 
 		rpc = r535_gsp_msgq_recv_one_elem(gsp, &info);
 		if (IS_ERR_OR_NULL(rpc)) {
-			kfree(buf);
+			kvfree(buf);
 			return rpc;
 		}
 

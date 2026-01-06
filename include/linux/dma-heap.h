@@ -65,9 +65,9 @@ struct dma_buf *dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
 				      u64 heap_flags);
 
 #ifdef CONFIG_DMABUF_HEAPS_CMA
-int cma_heap_add(struct cma *cma, void *data);
+int cma_heap_add(struct cma *cma, const char *name);
 #else
-static inline int cma_heap_add(struct cma *cma, void *data)
+static inline int cma_heap_add(struct cma *cma, const char *name)
 {
 	return -EINVAL;
 }

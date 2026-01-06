@@ -22,11 +22,10 @@
 #include <linux/module.h>
 #include <linux/platform_device.h>
 #include <linux/sysfs.h>
+#include <linux/topology.h>
 #include <linux/uuid.h>
 
 #include <uapi/asm-generic/errno-base.h>
-
-#include <asm/amd/node.h>
 
 #include "hsmp.h"
 
@@ -509,7 +508,7 @@ static int init_acpi(struct device *dev)
 
 static const struct bin_attribute  hsmp_metric_tbl_attr = {
 	.attr = { .name = HSMP_METRICS_TABLE_NAME, .mode = 0444},
-	.read_new = hsmp_metric_tbl_acpi_read,
+	.read = hsmp_metric_tbl_acpi_read,
 	.size = sizeof(struct hsmp_metric_table),
 };
 
@@ -586,9 +585,9 @@ static int hsmp_acpi_probe(struct platform_device *pdev)
 		return -ENOMEM;
 
 	if (!hsmp_pdev->is_probed) {
-		hsmp_pdev->num_sockets = amd_num_nodes();
-		if (hsmp_pdev->num_sockets == 0 || hsmp_pdev->num_sockets > MAX_AMD_NUM_NODES) {
-			dev_err(&pdev->dev, "Wrong number of sockets\n");
+		hsmp_pdev->num_sockets = topology_max_packages();
+		if (!hsmp_pdev->num_sockets) {
+			dev_err(&pdev->dev, "No CPU sockets detected\n");
 			return -ENODEV;
 		}
 
