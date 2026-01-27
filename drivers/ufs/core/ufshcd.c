@@ -4826,6 +4826,9 @@ static int ufshcd_hba_execute_hce(struct ufs_hba *hba)
 	int retry_inner;
 
 start:
+	if (!strncmp(hba->vops->name, "qcom-fmr", 8))
+		goto fmr_managed;
+
 	if (ufshcd_is_hba_active(hba))
 		/* change controller state to "reset state" */
 		ufshcd_hba_stop(hba);
@@ -4833,6 +4836,7 @@ start:
 	/* UniPro link is disabled at this point */
 	ufshcd_set_link_off(hba);
 
+fmr_managed:
 	ufshcd_vops_hce_enable_notify(hba, PRE_CHANGE);
 
 	/* start controller initialization sequence */
@@ -4970,6 +4974,12 @@ static int ufshcd_link_startup(struct ufs_hba *hba)
 	int ret;
 	int retries = DME_LINKSTARTUP_RETRIES;
 	bool link_startup_again = false;
+
+	if (!strncmp(hba->vops->name, "qcom-fmr", 8)) {
+		ufshcd_init_pwr_info(hba);
+		ret = ufshcd_make_hba_operational(hba);
+		return ret;
+	}
 
 	/*
 	 * If UFS device isn't active then we will have to issue link startup
@@ -7689,7 +7699,8 @@ static int ufshcd_host_reset_and_restore(struct ufs_hba *hba)
 	 * Stop the host controller and complete the requests
 	 * cleared by h/w
 	 */
-	ufshcd_hba_stop(hba);
+	if (strncmp(hba->vops->name, "qcom-fmr", 8))
+		ufshcd_hba_stop(hba);
 	hba->silence_err_logs = true;
 	ufshcd_complete_requests(hba, true);
 	hba->silence_err_logs = false;

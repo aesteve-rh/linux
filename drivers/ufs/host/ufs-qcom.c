@@ -1158,7 +1158,7 @@ static int ufs_qcom_common_init(struct ufs_hba *hba)
 		return err;
 
 	host->device_reset = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
 	if (IS_ERR(host->device_reset)) {
 		err = dev_err_probe(dev, PTR_ERR(host->device_reset),
 				    "Failed to acquire device reset gpio\n");
@@ -1266,7 +1266,6 @@ static int ufs_qcom_fmr_init(struct ufs_hba *hba)
 		goto out_variant_clear;
 
 	hba->caps |= UFSHCD_CAP_WB_EN;
-	ufs_qcom_advertise_quirks(hba);
 	hba->quirks |= UFSHCD_QUIRK_BROKEN_AUTO_HIBERN8;
 
 	return 0;
@@ -1966,7 +1965,6 @@ static const struct ufs_hba_variant_ops ufs_hba_qcom_fmr_vops = {
 	.suspend		= ufs_qcom_fmr_suspend,
 	.resume			= ufs_qcom_fmr_resume,
 	.dbg_register_dump	= ufs_qcom_dump_dbg_regs,
-	.device_reset		= ufs_qcom_device_reset,
 	.config_scaling_param   = ufs_qcom_config_scaling_param,
 	.mcq_config_resource	= ufs_qcom_mcq_config_resource,
 	.get_hba_mac		= ufs_qcom_get_hba_mac,
