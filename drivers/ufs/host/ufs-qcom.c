@@ -505,24 +505,21 @@ static int ufs_qcom_fmr_hce_enable_notify(struct ufs_hba *hba,
 				      enum ufs_notify_change_status status)
 {
 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
-	int err = 0;
 
 	switch (status) {
 	case PRE_CHANGE:
 		ufs_qcom_select_unipro_mode(host);
 		break;
 	case POST_CHANGE:
-		/* check if UFS PHY moved from DISABLED to HIBERN8 */
-		err = ufs_qcom_check_hibern8(hba);
 		ufs_qcom_enable_hw_clk_gating(hba);
 		ufs_qcom_ice_enable(host);
 		break;
 	default:
 		dev_err(hba->dev, "%s: invalid status %d\n", __func__, status);
-		err = -EINVAL;
-		break;
+		return -EINVAL;
 	}
-	return err;
+
+	return 0;
 }
 
 /**
@@ -1161,7 +1158,7 @@ static int ufs_qcom_common_init(struct ufs_hba *hba)
 		return err;
 
 	host->device_reset = devm_gpiod_get_optional(dev, "reset",
-						     GPIOD_OUT_HIGH);
+						     GPIOD_OUT_LOW);
 	if (IS_ERR(host->device_reset)) {
 		err = dev_err_probe(dev, PTR_ERR(host->device_reset),
 				    "Failed to acquire device reset gpio\n");
@@ -1269,7 +1266,6 @@ static int ufs_qcom_fmr_init(struct ufs_hba *hba)
 		goto out_variant_clear;
 
 	hba->caps |= UFSHCD_CAP_WB_EN;
-	ufs_qcom_advertise_quirks(hba);
 	hba->quirks |= UFSHCD_QUIRK_BROKEN_AUTO_HIBERN8;
 
 	return 0;
@@ -1969,7 +1965,6 @@ static const struct ufs_hba_variant_ops ufs_hba_qcom_fmr_vops = {
 	.suspend		= ufs_qcom_fmr_suspend,
 	.resume			= ufs_qcom_fmr_resume,
 	.dbg_register_dump	= ufs_qcom_dump_dbg_regs,
-	.device_reset		= ufs_qcom_device_reset,
 	.config_scaling_param   = ufs_qcom_config_scaling_param,
 	.mcq_config_resource	= ufs_qcom_mcq_config_resource,
 	.get_hba_mac		= ufs_qcom_get_hba_mac,
