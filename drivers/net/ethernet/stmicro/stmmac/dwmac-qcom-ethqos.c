@@ -780,6 +780,16 @@ static int ethqos_configure(struct qcom_ethqos *ethqos)
 	return ethqos->configure_func(ethqos);
 }
 
+static void ethqos_safety_feature(struct stmmac_priv *priv, bool en)
+{
+	if (priv->sfty_irq > 0) {
+		if (en)
+			enable_irq(priv->sfty_irq);
+		else
+			disable_irq(priv->sfty_irq);
+	}
+}
+
 static void ethqos_fix_mac_speed(void *priv, unsigned int speed, unsigned int mode)
 {
 	struct qcom_ethqos *ethqos = priv;
@@ -1166,6 +1176,8 @@ static int qcom_ethqos_probe(struct platform_device *pdev)
 	if (ethqos->has_emac_ge_3)
 		plat_dat->dwmac4_addrs = &data->dwmac4_addrs;
 	plat_dat->pmt = 1;
+	plat_dat->safety_irq = ethqos_safety_feature;
+
 	if (of_property_read_bool(np, "snps,tso"))
 		plat_dat->flags |= STMMAC_FLAG_TSO_EN;
 	if (of_device_is_compatible(np, "qcom,qcs404-ethqos"))
