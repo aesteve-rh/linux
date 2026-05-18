@@ -15,6 +15,7 @@ readonly KERNEL_CHECKOUT="$(realpath "${SCRIPT_DIR}"/../../../../)"
 
 source "${SCRIPT_DIR}"/../kselftest/ktap_helpers.sh
 
+BUILD=0
 QEMU="qemu-system-$(uname -m)"
 VERBOSE=0
 SHELL_MODE=0
@@ -24,10 +25,22 @@ function usage() {
 	cat <<EOF
 $0 [OPTIONS]
 Options:
+	-b	Build kernel from source tree before booting
 	-q	QEMU binary/path (default: ${QEMU})
 	-s	Start interactive shell in VM instead of running tests
 	-v	Verbose output (vng boot logs on stdout)
 	-h	Display this help
+
+If you build your kernel using KBUILD_OUTPUT= or O= options, these
+can be passed as environment variables to the script:
+
+  O=<build_path> $0 -b
+
+or
+
+  KBUILD_OUTPUT=<build_path> $0 -b
+
+O= takes precedence over KBUILD_OUTPUT= if both are set.
 EOF
 }
 
@@ -58,17 +71,46 @@ function check_deps() {
 	done
 }
 
+function handle_build() {
+	[[ "${BUILD}" -eq 1 ]] || return 0
+
+	[[ -f "${KERNEL_CHECKOUT}/kernel/cgroup/dmem_selftest.c" ]] || \
+		fail "-b requires vmtest-dmem.sh called from the kernel source tree"
+
+	# Figure out where the kernel is being built.
+	# O takes precedence over KBUILD_OUTPUT.
+	[[ -n "${O:-}" ]] && O="$(realpath -m "${O}")"
+	[[ -n "${KBUILD_OUTPUT:-}" ]] && KBUILD_OUTPUT="$(realpath -m "${KBUILD_OUTPUT}")"
+
+	local out_args=()
+	if [[ -n "${O:-}" ]]; then
+		out_args=(O="${O}")
+	elif [[ -n "${KBUILD_OUTPUT:-}" ]]; then
+		out_args=(KBUILD_OUTPUT="${KBUILD_OUTPUT}")
+	fi
+
+	pushd "${KERNEL_CHECKOUT}" &>/dev/null
+	vng --kconfig --config "${SCRIPT_DIR}"/config "${out_args[@]}" || \
+		fail "failed to generate .config for kernel source tree (${KERNEL_CHECKOUT})"
+	make "${out_args[@]}" -j"$(nproc 2>/dev/null || echo 1)" || \
+		fail "failed to build kernel from source tree (${KERNEL_CHECKOUT})"
+	make -C tools/testing/selftests TARGETS=cgroup -j"$(nproc 2>/dev/null || echo 1)" || \
+		fail "failed to build cgroup selftests (${KERNEL_CHECKOUT})"
+	popd &>/dev/null
+}
+
 # Run vng with common flags. Extra arguments are appended by the caller:
 #   --exec <script>  for automated test runs
 #   (nothing)        for interactive shell mode
 function run_vm() {
-	local verbose_opt=""
+	local vng_args=()
 
-	[[ "${VERBOSE}" -eq 1 ]] && verbose_opt="--verbose"
+	[[ "${BUILD}" -eq 1 ]] && vng_args+=("${O:-${KBUILD_OUTPUT:-${KERNEL_CHECKOUT}}}")
+	[[ "${VERBOSE}" -eq 1 ]] && vng_args+=("--verbose")
 
 	vng \
 		--run \
-		${verbose_opt:+"${verbose_opt}"} \
+		"${vng_args[@]}" \
 		--qemu="$(command -v "${QEMU}")" \
 		--user root \
 		--rw \
@@ -76,10 +118,11 @@ function run_vm() {
 }
 
 function main() {
-	while getopts ':hvq:s' opt; do
+	while getopts ':hvq:sb' opt; do
 		case "${opt}" in
 		v) VERBOSE=1 ;;
 		q) QEMU="${OPTARG}" ;;
+		b) BUILD=1 ;;
 		s) SHELL_MODE=1 ;;
 		h) usage; exit 0 ;;
 		*) usage; exit 1 ;;
@@ -87,6 +130,7 @@ function main() {
 	done
 
 	check_deps
+	handle_build
 
 	if [[ "${SHELL_MODE}" -eq 1 ]]; then
 		echo "Starting interactive shell in VM. Exit to stop VM."
@@ -118,7 +162,7 @@ elif modprobe -q dmem_selftest 2>/dev/null && \
      [[ -e /sys/kernel/debug/dmem_selftest/charge ]]; then
 	echo "dmem_selftest ready (modprobe)"
 else
-	echo "dmem_selftest unavailable" >&2
+	echo "dmem_selftest unavailable; use -b to build a kernel with CONFIG_DMEM_SELFTEST=m" >&2
 	exit 4
 fi
 
