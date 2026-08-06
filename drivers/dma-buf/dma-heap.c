@@ -65,7 +65,6 @@ static int dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
 				 struct mem_cgroup *charge_to)
 {
 	struct dma_buf *dmabuf;
-	unsigned int nr_pages;
 	struct mem_cgroup *memcg = charge_to;
 	int fd;
 
@@ -81,20 +80,17 @@ static int dma_heap_buffer_alloc(struct dma_heap *heap, size_t len,
 	if (IS_ERR(dmabuf))
 		return PTR_ERR(dmabuf);
 
-	nr_pages = len / PAGE_SIZE;
-
 	if (memcg)
 		css_get(&memcg->css);
 	else if (mem_accounting)
 		memcg = get_mem_cgroup_from_mm(current->mm);
 
 	if (memcg) {
-		if (!mem_cgroup_charge_dmabuf(memcg, nr_pages, GFP_KERNEL)) {
+		if (!mem_cgroup_charge_dmabuf(dmabuf, memcg, GFP_KERNEL)) {
 			mem_cgroup_put(memcg);
 			dma_buf_put(dmabuf);
 			return -ENOMEM;
 		}
-		dmabuf->memcg = memcg;
 	}
 
 	fd = dma_buf_fd(dmabuf, fd_flags);

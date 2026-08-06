@@ -181,11 +181,7 @@ static void dma_buf_release(struct dentry *dentry)
 	 */
 	BUG_ON(dmabuf->cb_in.active || dmabuf->cb_out.active);
 
-	if (dmabuf->memcg) {
-		mem_cgroup_uncharge_dmabuf(dmabuf->memcg,
-					  PAGE_ALIGN(dmabuf->size) / PAGE_SIZE);
-		mem_cgroup_put(dmabuf->memcg);
-	}
+	mem_cgroup_uncharge_dmabuf(dmabuf);
 
 	dmabuf->ops->release(dmabuf);
 
