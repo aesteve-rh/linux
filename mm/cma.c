@@ -25,7 +25,6 @@
 #include <linux/string.h>
 #include <linux/string_choices.h>
 #include <linux/log2.h>
-#include <linux/cma.h>
 #include <linux/highmem.h>
 #include <linux/io.h>
 #include <linux/kmemleak.h>
@@ -861,6 +860,21 @@ out:
 	return ret;
 }
 
+static void __cma_release_frozen(struct cma *cma, struct cma_memrange *cmr,
+		struct page *pages, unsigned long count)
+{
+	unsigned long pfn = page_to_pfn(pages);
+
+	pr_debug("%s(page %p, count %lu)\n", __func__, (void *)pages, count);
+
+	/* no-op if no objcg is found, so it is safe to call from __cma_alloc_frozen */
+	mem_cgroup_uncharge_cma(pages, count, cma);
+	free_contig_frozen_range(pfn, count);
+	cma_clear_bitmap(cma, cmr, pfn, count);
+	cma_sysfs_account_release_pages(cma, count);
+	trace_cma_release(cma->name, pfn, pages, count);
+}
+
 static struct page *__cma_alloc_frozen(struct cma *cma,
 		unsigned long count, unsigned int align, gfp_t gfp)
 {
@@ -914,6 +928,11 @@ static struct page *__cma_alloc_frozen(struct cma *cma,
 	} else {
 		count_vm_event(CMA_ALLOC_FAIL);
 		cma_sysfs_account_fail_pages(cma, count);
+	}
+
+	if (page && mem_cgroup_charge_cma(page, count, cma)) {
+		__cma_release_frozen(cma, &cma->ranges[r], page, count);
+		page = NULL;
 	}
 
 	return page;
@@ -991,19 +1010,6 @@ static struct cma_memrange *find_cma_memrange(struct cma *cma,
 	return cmr;
 }
 
-static void __cma_release_frozen(struct cma *cma, struct cma_memrange *cmr,
-		const struct page *pages, unsigned long count)
-{
-	unsigned long pfn = page_to_pfn(pages);
-
-	pr_debug("%s(page %p, count %lu)\n", __func__, (void *)pages, count);
-
-	free_contig_frozen_range(pfn, count);
-	cma_clear_bitmap(cma, cmr, pfn, count);
-	cma_sysfs_account_release_pages(cma, count);
-	trace_cma_release(cma->name, pfn, pages, count);
-}
-
 /**
  * cma_release() - release allocated pages
  * @cma:   Contiguous memory region for which the allocation is performed.
@@ -1014,7 +1020,7 @@ static void __cma_release_frozen(struct cma *cma, struct cma_memrange *cmr,
  * It returns false when provided pages do not belong to contiguous area and
  * true otherwise.
  */
-bool cma_release(struct cma *cma, const struct page *pages,
+bool cma_release(struct cma *cma, struct page *pages,
 		 unsigned long count)
 {
 	struct cma_memrange *cmr;
@@ -1037,7 +1043,7 @@ bool cma_release(struct cma *cma, const struct page *pages,
 }
 EXPORT_SYMBOL_GPL(cma_release);
 
-bool cma_release_frozen(struct cma *cma, const struct page *pages,
+bool cma_release_frozen(struct cma *cma, struct page *pages,
 		unsigned long count)
 {
 	struct cma_memrange *cmr;

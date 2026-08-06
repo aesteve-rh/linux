@@ -324,6 +324,10 @@ struct mem_cgroup {
 	spinlock_t event_list_lock;
 #endif /* CONFIG_MEMCG_V1 */
 
+#ifdef CONFIG_CMA
+	struct page_counter *cma_counters;
+#endif /* CONFIG_CMA */
+
 	struct mem_cgroup_per_node *nodeinfo[];
 };
 
@@ -665,6 +669,12 @@ int mem_cgroup_charge_hugetlb(struct folio* folio, gfp_t gfp);
 
 int mem_cgroup_swapin_charge_folio(struct folio *folio, unsigned short id,
 				   struct mm_struct *mm, gfp_t gfp);
+
+
+int mem_cgroup_charge_cma(struct page *page, unsigned long count,
+			  struct cma *cma);
+void mem_cgroup_uncharge_cma(struct page *page, unsigned long count,
+			     struct cma *cma);
 
 bool mem_cgroup_charge_dmabuf(struct dma_buf *dmabuf, struct mem_cgroup *memcg,
 			      gfp_t gfp_mask);
@@ -1174,6 +1184,17 @@ static inline bool mem_cgroup_charge_dmabuf(struct dma_buf *dmabuf,
 					    gfp_t gfp_mask)
 {
 	return true;
+}
+
+
+static inline int mem_cgroup_charge_cma(struct page *page, unsigned long count,
+	struct cma *cma)
+{
+return 0;
+}
+static inline void mem_cgroup_uncharge_cma(struct page *page,
+	   unsigned long count, struct cma *cma)
+{
 }
 
 static inline void mem_cgroup_uncharge(struct folio *folio)
