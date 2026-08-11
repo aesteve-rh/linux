@@ -5644,7 +5644,7 @@ bool mem_cgroup_charge_dmabuf(struct dma_buf *dmabuf, struct mem_cgroup *memcg,
 	if (mem_cgroup_disabled())
 		return true;
 
-	if (try_charge(memcg, gfp_mask, nr_pages))
+	if (!dmabuf->charged && try_charge(memcg, gfp_mask, nr_pages))
 		return false;
 
 	mod_memcg_state(memcg, MEMCG_DMABUF, nr_pages);
@@ -5670,7 +5670,7 @@ void mem_cgroup_uncharge_dmabuf(struct dma_buf *dmabuf)
 
 	nr_pages = PAGE_ALIGN(dmabuf->size) >> PAGE_SHIFT;
 	mod_memcg_state(memcg, MEMCG_DMABUF, -nr_pages);
-	if (!mem_cgroup_is_root(memcg))
+	if (!dmabuf->charged && !mem_cgroup_is_root(memcg))
 		refill_stock(memcg, nr_pages);
 	mem_cgroup_put(memcg);
 	dmabuf->memcg = NULL;

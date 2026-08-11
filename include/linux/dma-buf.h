@@ -433,6 +433,9 @@ struct dma_buf {
 
 	/** @memcg: the cgroup to which this buffer is currently attributed */
 	struct mem_cgroup *memcg;
+
+	/** @charged: true if the main memcg memory counter is charged by allocator */
+	bool charged;
 };
 
 /**
@@ -517,6 +520,7 @@ struct dma_buf_export_info {
 	int flags;
 	struct dma_resv *resv;
 	void *priv;
+	bool charged;
 };
 
 /**
