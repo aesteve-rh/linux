@@ -1241,6 +1241,37 @@ struct mem_cgroup *get_mem_cgroup_from_folio(struct folio *folio)
 }
 
 /**
+ * get_mem_cgroup_from_fd - Obtain a reference on a given cgroupfd.
+ * @fd: cgroupfd from which memcg should be extracted.
+ */
+struct mem_cgroup *get_mem_cgroup_from_fd(unsigned int fd)
+{
+	struct cgroup *cgrp;
+	struct cgroup_subsys_state *css;
+	struct mem_cgroup *memcg;
+
+	if (mem_cgroup_disabled())
+		return NULL;
+
+	cgrp = cgroup_get_from_fd(fd);
+	if (IS_ERR(cgrp))
+		return ERR_CAST(cgrp);
+
+	rcu_read_lock();
+	css = cgroup_css(cgrp, &memory_cgrp_subsys);
+	if (!css || !css_tryget_online(css)) {
+		rcu_read_unlock();
+		cgroup_put(cgrp);
+		return ERR_PTR(-ENOENT);
+	}
+
+	memcg = mem_cgroup_from_css(css);
+	rcu_read_unlock();
+	cgroup_put(cgrp);
+	return memcg;
+}
+
+/**
  * mem_cgroup_iter - iterate over memory cgroup hierarchy
  * @root: hierarchy root
  * @prev: previously returned memcg, NULL on first invocation
@@ -5685,6 +5716,47 @@ bool mem_cgroup_charge_dmabuf(struct dma_buf *dmabuf, struct mem_cgroup *memcg,
 
 	mod_memcg_state(memcg, MEMCG_DMABUF, nr_pages);
 	dmabuf->memcg = memcg;
+	return true;
+}
+
+/**
+ * mem_cgroup_transfer_dmabuf_charge - move a dma-buf charge
+ * @dmabuf: buffer to transfer charge
+ * @new_memcg: target memcg; caller must hold a reference
+ *
+ * Transfers the charge for @dmabuf to @new_memcg and, on
+ * success, stores @new_memcg in @dmabuf->memcg.
+ * Returns %true on success, %false if the charge failed.
+ * On failure the caller retains its reference to @new_memcg.
+ */
+bool mem_cgroup_transfer_dmabuf_charge(struct dma_buf *dmabuf,
+				       struct mem_cgroup *new_memcg)
+{
+	struct mem_cgroup *old_memcg = dmabuf->memcg;
+	unsigned int nr_pages = PAGE_ALIGN(dmabuf->size) >> PAGE_SHIFT;
+
+	if (!mem_cgroup_disabled() && try_charge(new_memcg, GFP_KERNEL, nr_pages))
+		return false;
+
+	mod_memcg_state(new_memcg, MEMCG_DMABUF, nr_pages);
+
+	if (cmpxchg(&dmabuf->memcg, old_memcg, new_memcg) != old_memcg) {
+		/* Only the current owner can transfer the charge */
+		mod_memcg_state(new_memcg, MEMCG_DMABUF, -nr_pages);
+		if (!mem_cgroup_is_root(new_memcg))
+			refill_stock(new_memcg, nr_pages);
+		return false;
+	}
+
+	if (old_memcg) {
+		/* Uncharge old cgroup */
+		mod_memcg_state(old_memcg, MEMCG_DMABUF, -nr_pages);
+		if (!mem_cgroup_is_root(old_memcg))
+			refill_stock(old_memcg, nr_pages);
+		/* unref from buffer - buffer keeps new ref to new_memcg */
+		mem_cgroup_put(old_memcg);
+	}
+
 	return true;
 }
 

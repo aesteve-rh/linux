@@ -80,8 +80,6 @@ static int dma_heap_open(struct inode *inode, struct file *file)
 
 static struct dma_buf *dma_heap_ioctl_allocate(struct file *file, void *data)
 {
-	struct cgroup *cgrp;
-	struct cgroup_subsys_state *css;
 	const struct cred *tcred;
 	struct dma_heap_allocation_data *heap_allocation = data;
 	struct dma_heap *heap = file->private_data;
@@ -102,21 +100,8 @@ static struct dma_buf *dma_heap_ioctl_allocate(struct file *file, void *data)
 		return ERR_PTR(-EINVAL);
 
 	if (heap_allocation->charge_fd) {
-		cgrp = cgroup_get_from_fd(heap_allocation->charge_fd);
-		if (!IS_ERR(cgrp)) {
-			/* charge_fd is a cgroupfd */
-			rcu_read_lock();
-			css = cgroup_css(cgrp, &memory_cgrp_subsys);
-			if (!css || !css_tryget_online(css)) {
-				rcu_read_unlock();
-				cgroup_put(cgrp);
-				return ERR_PTR(-ENOENT);
-			}
-
-			memcg = mem_cgroup_from_css(css);
-			rcu_read_unlock();
-			cgroup_put(cgrp);
-		} else {
+		memcg = get_mem_cgroup_from_fd(heap_allocation->charge_fd);
+		if (IS_ERR(memcg)) {
 			/* charge_fd is a pidfd  */
 			task = pidfd_get_task(heap_allocation->charge_fd, &pidfd_flags);
 			if (IS_ERR(task))

@@ -674,6 +674,9 @@ int mem_cgroup_swapin_charge_folio(struct folio *folio, unsigned short id,
 bool mem_cgroup_charge_dmabuf(struct dma_buf *dmabuf, struct mem_cgroup *memcg,
 			      gfp_t gfp_mask);
 
+bool mem_cgroup_transfer_dmabuf_charge(struct dma_buf *dmabuf,
+				       struct mem_cgroup *new_memcg);
+
 void __mem_cgroup_uncharge(struct folio *folio);
 
 /**
@@ -767,6 +770,8 @@ struct mem_cgroup *get_mem_cgroup_from_mm(struct mm_struct *mm);
 struct mem_cgroup *get_mem_cgroup_from_current(void);
 
 struct mem_cgroup *get_mem_cgroup_from_folio(struct folio *folio);
+
+struct mem_cgroup *get_mem_cgroup_from_fd(unsigned int fd);
 
 struct lruvec *folio_lruvec_lock(struct folio *folio);
 struct lruvec *folio_lruvec_lock_irq(struct folio *folio);
@@ -1183,6 +1188,12 @@ static inline bool mem_cgroup_charge_dmabuf(struct dma_buf *dmabuf,
 	return true;
 }
 
+static inline bool mem_cgroup_transfer_dmabuf_charge(struct dma_buf *dmabuf,
+						     struct mem_cgroup *new_memcg)
+{
+	return true;
+}
+
 static inline void mem_cgroup_uncharge(struct folio *folio)
 {
 }
@@ -1238,6 +1249,11 @@ static inline struct mem_cgroup *get_mem_cgroup_from_current(void)
 }
 
 static inline struct mem_cgroup *get_mem_cgroup_from_folio(struct folio *folio)
+{
+	return NULL;
+}
+
+static inline struct mem_cgroup *get_mem_cgroup_from_fd(unsigned int fd)
 {
 	return NULL;
 }

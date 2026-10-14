@@ -540,6 +540,59 @@ static long dma_buf_import_sync_file(struct dma_buf *dmabuf,
 }
 #endif
 
+static long dma_buf_xfer_charge(struct dma_buf *dmabuf,
+				const void __user *user_data)
+{
+	struct dma_buf_transfer_charge arg;
+	struct mem_cgroup *memcg;
+	struct task_struct *task;
+	const struct cred *tcred;
+	unsigned int pidfd_flags;
+	int ret = 0;
+
+	if (copy_from_user(&arg, user_data, sizeof(arg)))
+		return -EFAULT;
+
+	if (!IS_ENABLED(CONFIG_MEMCG))
+		return 0;
+
+	if (arg.__padding != 0)
+		return -EINVAL;
+
+	memcg = get_mem_cgroup_from_fd(arg.charge_fd);
+	if (IS_ERR(memcg)) {
+		/* charge_fd is a pidfd  */
+		task = pidfd_get_task(arg.charge_fd, &pidfd_flags);
+		if (IS_ERR(task))
+			return -EINVAL;
+
+		tcred = get_task_cred(task);
+		ret = security_dma_heap_alloc(current_cred(), tcred);
+		put_cred(tcred);
+		if (ret) {
+			put_task_struct(task);
+			return ret;
+		}
+
+		memcg = get_mem_cgroup_from_mm(task->mm);
+		put_task_struct(task);
+	}
+
+	if (dmabuf->memcg == memcg)
+		goto skip_transfer;
+
+	if (!mem_cgroup_transfer_dmabuf_charge(dmabuf, memcg)) {
+		ret = -ENOMEM;
+		goto skip_transfer;
+	}
+
+	return 0;
+
+skip_transfer:
+	mem_cgroup_put(memcg);
+	return ret;
+}
+
 static long dma_buf_ioctl(struct file *file,
 			  unsigned int cmd, unsigned long arg)
 {
@@ -589,6 +642,9 @@ static long dma_buf_ioctl(struct file *file,
 	case DMA_BUF_IOCTL_IMPORT_SYNC_FILE:
 		return dma_buf_import_sync_file(dmabuf, (const void __user *)arg);
 #endif
+
+	case DMA_BUF_IOCTL_XFER_CHARGE:
+		return dma_buf_xfer_charge(dmabuf, (const void __user *)arg);
 
 	default:
 		return -ENOTTY;
